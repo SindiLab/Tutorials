@@ -22,7 +22,7 @@ $ cd ~
 2. Creating a self-signed ssl certificate with `openssl`. In the following example, we create a certificate good for 500 days with both the key and certificate data written to the same file:
 ````bash
 $ openssl req -x509 -nodes -days 500 -newkey rsa:2048 -keyout key4Jupyter.key -out cert4Jupyter.pem
- ```` 
+```` 
 ***keep in mind that when you create the open certificate, your browser may ask you about authenticating the connection. Make sure to do so when prompted by your browser***. For more information about how to create a certified SSL certificate, checkout [This tutorial](https://arstechnica.com/information-technology/2009/12/how-to-get-set-with-a-secure-sertificate-for-free/).
 
 3. Remember the path for both the key and the certificate created. In the example above, we would have
@@ -43,6 +43,14 @@ Now we have to make sure that your desired port, usually 8888, is open and avail
 $ lsof -ti:8888 | xargs kill -9
 ````
 
-#### Step 5: 
-
 ### These Steps are Done your Local Machine
+
+#### Step 5: Configure the Local Client 
+For this step, we need to SSH into the remote machine where we set up the Jupyter server, to serve as a bridge between our machine and the remote one. We will configure our local client for connecting to an EC2 instance using:
+````bash
+$ ssh -i `~/EC2KEYPAIR.pem` -N -f -L 8888:localhost:8888 ubuntu@EC2-IP-ADDRESS.compute-1.amazonaws.com
+````
+
+after this step we are done! Once again, remember that since we created an open SSL certificate, you browser might show that the page is not secure. Make sure to select "advance" or "more details" options and select an option which will allow you to proceed to the page. 
+
+*Enjoy your new Jupyter Server :)*
