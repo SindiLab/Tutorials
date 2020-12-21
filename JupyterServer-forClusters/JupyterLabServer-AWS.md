@@ -34,7 +34,7 @@ $ CERT_PATH="~/cert4Jupyter.pem"
 #### Step 3: Start Jupyter Server on the Remote Machine
 Now having the path for both the key and the certificate, we can start the Jupyter :
 ````
-$ jupyter lab --certfile=$KEY_PATH --keyfile $CERT_PATH
+$ jupyter lab --certfile=$CERT_PATH --keyfile $KEY_PATH 
 ````
 
 #### Step 4: Choose a Port
@@ -51,6 +51,6 @@ For this step, we need to SSH into the remote machine where we set up the Jupyte
 $ ssh -i `~/EC2KEYPAIR.pem` -N -f -L 8888:localhost:8888 ubuntu@EC2-IP-ADDRESS.compute-1.amazonaws.com
 ````
 
-after this step we are done! Once again, remember that since we created an open SSL certificate, you browser might show that the page is not secure. Make sure to select "advance" or "more details" options and select an option which will allow you to proceed to the page. 
+after this step use a browswer to visit [https://localhost:8888/](https://localhost:8888/) and we are done! Once again, remember that since we created an open SSL certificate, you browser might show that the page is not secure. Make sure to select "advance" or "more details" options and select an option which will allow you to proceed to the page. 
 
 *Enjoy your new Jupyter Server :)*
