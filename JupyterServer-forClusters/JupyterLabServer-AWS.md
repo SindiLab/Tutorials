@@ -34,7 +34,7 @@ $ CERT_PATH="~/cert4Jupyter.pem"
 #### Step 3: Start Jupyter Server on the Remote Machine
 Now having the path for both the key and the certificate, we can start the Jupyter :
 ````
-$ jupyter lab --certfile=$CERT_PATH --keyfile $KEY_PATH 
+$ jupyter lab --certfile=$CERT_PATH --keyfile=$KEY_PATH 
 ````
 
 #### Step 4: Choose a Port
@@ -45,7 +45,13 @@ $ lsof -ti:8888 | xargs kill -9
 
 ### These Steps are Done your Local Machine
 
-#### Step 5: Configure the Local Client 
+#### Step 5: Clear a Port for Binding
+Now we have to make sure that your desired port, usually 8888, is open and available on your local machine as well. If you don't know what is listening on or using port 8888, you can run the following to kill anything that is currently running
+````
+$ lsof -ti:8888 | xargs kill -9
+````
+
+#### Step 6: Configure the Local Client 
 For this step, we need to SSH into the remote machine where we set up the Jupyter server, to serve as a bridge between our machine and the remote one. We will configure our local client for connecting to an EC2 instance using:
 ````bash
 $ ssh -i `~/EC2KEYPAIR.pem` -N -f -L 8888:localhost:8888 ubuntu@EC2-IP-ADDRESS.compute-1.amazonaws.com
