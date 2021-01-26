@@ -334,15 +334,8 @@ ggsave(
 ```
 
 
-
-
-
-
-
-
-
-
-
-
-
+#### Session Info
+```{r}
+sessionInfo()
+```
 
