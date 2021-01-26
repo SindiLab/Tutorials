@@ -1,0 +1,257 @@
+---
+title: "Brain Small Models"
+output: html_document
+---
+
+
+# Loading packages and data -----------------------------------------------
+
+```{r, message=FALSE, warning=FALSE}
+library(dplyr)
+library(scater)
+library(SeuratDisk)
+library(Seurat)
+library(ggplot2)
+library(RColorBrewer)
+library(readr)
+
+```
+
+
+#### Loading in the h5seurat files
+
+```{r, results='hide', message=FALSE, warning=FALSE}
+real_validation <- LoadH5Seurat("BrainSmall-realData_2kTest.h5seurat") # real data
+
+scgan_validation <- LoadH5Seurat("scGAN_2kTest.h5seurat") # scGAN data
+
+activa_validation <- LoadH5Seurat("20kBrainSmall-1997Generated_10RecLoss_Epoch600.h5seurat") # ACTIVA data
+
+# Changing the barcodes in ACTIVA validation set to be the same as the real validation set
+rownames(activa_validation@meta.data) <- rownames(real_validation@meta.data)
+```
+
+
+# Adding metadata ---------------------------------------------------------
+
+```{r, echo=TRUE, results='hide'}
+# Generate dataset labels for the metadata
+real_labs <- rep("Real (Test Set)", nrow(real_validation@meta.data))
+activa_labs <- rep("ACTIVA", nrow(activa_validation@meta.data))
+scgan_labs <- rep("scGAN", nrow(scgan_validation@meta.data))
+
+
+real_validation <- AddMetaData(real_validation,
+                               metadata = real_labs,
+                               col.name = "dataset_label") # adding dataset label to metadata
+
+scgan_validation <- AddMetaData(scgan_validation,
+                                metadata = scgan_labs,
+                                col.name = "dataset_label") # adding dataset label to metadata
+
+activa_validation <- AddMetaData(activa_validation,
+                                 metadata = activa_labs,
+                                 col.name = "dataset_label") # adding dataset label to metadata
+
+```
+
+
+# Dataset Integration -----------------------------------------------------
+
+#### Variable Gene Selection
+```{r}
+# 3000 highly variable genes identified using variance stabilizing transformation - vst
+real_validation <- FindVariableFeatures(object = real_validation,
+                                        nfeatures = 3000,
+                                        selection.method = "vst")
+
+scgan_validation <- FindVariableFeatures(object = scgan_validation,
+                                         nfeatures = 3000,
+                                         selection.method = "vst")
+
+activa_validation <- FindVariableFeatures(object = activa_validation,
+                       nfeatures = 3000,
+                       selection.method = "vst")
+```
+
+#### Integration
+```{r}
+val_list <- list(real_validation, scgan_validation, activa_validation)
+
+#Integration
+validation.anchors <-
+  FindIntegrationAnchors(object.list = val_list,
+                         dims = 1:30,
+                         anchor.features = 3000)
+
+validation.int <- IntegrateData(anchorset = validation.anchors,
+                                dims = 1:30)
+
+DefaultAssay(validation.int) <- "integrated"
+
+```
+
+
+# Scaling, Dimensional reduction, Clustering ------------------------------
+
+#### Scaling and PCA
+```{r}
+# Scaling
+validation.int <- ScaleData(validation.int)
+
+# Dim reduction w/PCA
+validation.int <- RunPCA(validation.int)
+ElbowPlot(validation.int, 
+          ndims = 40)
+```
+
+#### Jackstraw plot
+```{r, eval=FALSE}
+# Jackstraw plot
+# Takes a bit of time to run
+validation.int <- JackStraw(validation.int,
+                            dims = 50)
+validation.int <- ScoreJackStraw(validation.int, 
+                                 dims = 1:50)
+JackStrawPlot(validation.int, 
+              dims = 1:50)
+```
+
+#### Clustering
+```{r}
+# Clustering
+usepcs_int <- 1:50
+validation.int <- FindNeighbors(object = validation.int,
+                                dims = usepcs_int)
+
+validation.int <- FindClusters(object = validation.int,
+                               resolution = seq(0.10, 2, 0.10))
+
+grep("res", colnames(validation.int@meta.data), value = TRUE) %>%
+  purrr::map_chr(~ paste(.x, "--> clusters generated:", length(unique(
+    validation.int@meta.data[, .x]))))
+
+Idents(validation.int) <- "integrated_snn_res.0.3"
+```
+
+#### Dimension reduction
+```{r}
+# Dimension reduction
+validation.int <- RunTSNE(object = validation.int, 
+                          reduction.use = "pca",
+                          dims = usepcs_int,
+                          do.fast = TRUE)
+
+validation.int <- RunUMAP(validation.int,
+                          reduction = "pca",
+                          dims = usepcs_int)
+```
+
+#### Saving object
+```{r, eval=FALSE}
+# Saving the datasets in different formats for interoperability with python packages
+save(validation.int, file = "data/final_brainsmall_val_int_clust.RData")
+SaveH5Seurat(validation.int,
+             filename = "final_brainsmall_val_int_clust.h5Seurat",
+             overwrite = FALSE)
+Convert("final_brainsmall_val_int_clust.h5Seurat", dest = "h5ad")
+```
+
+
+# Visualization with scater -----------------------------------------------
+
+#### Prep for plotting
+```{r}
+# scater is a toolkit like Seurat but uses a different data structure (Single Cell Experiment (SCE))
+
+# First will use seurat to generate the SCE data by calling the as.SingleCellExperiment() on our Seurat object
+
+# Removing negative expression values before converting to SCE object
+cleaned_Hmgb2 <- WhichCells(validation.int, 
+                            expression = Hmgb2 >= 0)
+validation.int <- subset(validation.int, cells = cleaned_Hmgb2)
+
+# Converting the seurat object into a SCE object
+val_int_sce <- as.SingleCellExperiment(validation.int)
+names(assays(val_int_sce)) <- "counts" # making sure assay name is correct for expression values
+
+# Creating an object "logcounts" which houses log2 transformed count values
+logcounts(val_int_sce) <- log2(counts(val_int_sce)+1)
+dim(logcounts(val_int_sce))
+```
+
+#### Plotting w/scater
+```{r, fig.cap="Clusters", fig.height=4,fig.width=8, dpi=320}
+p_clusters <-
+  plotUMAP(val_int_sce, colour_by = "ident", other_fields = "dataset_label") +
+  facet_wrap( ~ dataset_label) +
+  theme(legend.title = element_blank(),
+        strip.text.x = element_text(face = "bold"))
+p_clusters
+
+ggsave(
+  filename = "plots/integrated/brainsmall_final_validation_scater_umap.png",
+  dpi = 320,
+  units = "in",
+  width = 8,
+  height = 4
+)
+```
+
+```{r, fig.cap="Violin Plots", fig.height=4,fig.width=8, dpi=320}
+p_Hmgb2 <- plotExpression(
+  val_int_sce,
+  features = c("Hmgb2"),
+  colour_by = "ident",
+  x = "ident",
+  other_fields = "dataset_label",
+  exprs_values = "logcounts"
+) +
+  facet_wrap( ~ dataset_label) +
+  xlab("Cluster") +
+  ggtitle("Marker: Hmgb2") +
+  theme(legend.title = element_blank(),
+        strip.text.x = element_text(face = "bold"))
+p_Hmgb2
+
+ggsave(
+  filename = "plots/integrated/brainsmall_final_validation_scater_violin_Hmgb2_logcounts.png",
+  dpi = 320,
+  units = "in",
+  width = 8,
+  height = 4
+)
+```
+
+```{r, fig.cap="Expression Plot",fig.height=4,fig.width=8, dpi=320}
+p_density_Hmgb2 <-
+  plotUMAP(val_int_sce, colour_by = "Hmgb2", other_fields = "dataset_label") +
+  facet_wrap( ~ dataset_label) +
+  scale_fill_viridis_c(option = "B") +
+  ggtitle("Marker: Hmgb2") +
+  theme(legend.title = element_blank(),
+        strip.text.x = element_text(face = "bold"))
+p_density_Hmgb2
+
+ggsave(
+  filename = "plots/integrated/brainsmall_final_validation_scater_UMAPexpression_Hmgb2.png",
+  dpi = 320,
+  units = "in",
+  width = 8,
+  height = 4
+)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
