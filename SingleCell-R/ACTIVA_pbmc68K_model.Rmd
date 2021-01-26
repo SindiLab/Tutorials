@@ -1,0 +1,348 @@
+---
+title: "PBMC 68k Models"
+output: html_document
+---
+
+# Loading packages and data -----------------------------------------------
+
+```{r, message=FALSE, warning=FALSE}
+library(dplyr)
+library(scater)
+library(SeuratDisk)
+library(Seurat)
+library(ggplot2)
+library(RColorBrewer)
+library(readr)
+
+```
+
+
+#### Loading in the h5seurat files
+```{r, results='hide', message=FALSE, warning=FALSE}
+real_validation <- LoadH5Seurat("68KPBMC_real_7kTest.h5seurat") # real data
+
+scgan_validation <- LoadH5Seurat("68kPBMC_scGANgenerated_7ktesting.h5seurat") # scGAN data
+
+activa_validation <- LoadH5Seurat("68kPBMC-6991Generated_10RecLoss_Epoch600.h5seurat") # ACTIVA Data
+
+# Changing the barcodes in ACTIVA validation set to be the same as the real validation set
+rownames(activa_validation@meta.data) <- rownames(real_validation@meta.data)
+```
+
+
+# Adding Cell Type Annotations --------------------------------------------
+
+```{r, echo=TRUE, results='hide'}
+# Reading in original dataset labels
+ann68kpbmc <- read_tsv("https://raw.githubusercontent.com/10XGenomics/single-cell-3prime-paper/master/pbmc68k_analysis/68k_pbmc_barcodes_annotation.tsv")
+
+# Real data cell labels
+real_validation@meta.data # taking a quick look
+
+real_val_barcodes <- real_validation@meta.data %>%
+  tibble::rownames_to_column(var = "Barcodes") %>%
+  pull(Barcodes)
+
+real_validation_celltype <- ann68kpbmc %>%
+  filter(barcodes %in% real_val_barcodes)
+
+# table(rownames(real_validation@meta.data) == real_validation_celltype$barcodes)
+
+# ACTIVA validation cell labels
+activa_validation@meta.data
+
+activa_val_barcodes <- activa_validation@meta.data %>%
+  tibble::rownames_to_column(var = "Barcodes") %>%
+  pull(Barcodes)
+
+activa_validation_celltype <- ann68kpbmc %>%
+  filter(barcodes %in% activa_val_barcodes)
+
+# table(rownames(activa_validation@meta.data) == activa_validation_celltype$barcodes)
+
+# scGAN Validation Cell Labels
+scgan_validation@meta.data
+
+scgan_val_barcodes <- scgan_validation@meta.data %>%
+  tibble::rownames_to_column(var = "Barcodes") %>%
+  pull(Barcodes)
+
+scgan_validation_celltype <- ann68kpbmc %>%
+  filter(barcodes %in% scgan_val_barcodes)
+
+# table(rownames(scgan_validation@meta.data) == scgan_validation_celltype$barcodes)
+
+# Generate dataset labels for the metadata
+real_labs <- rep("Real (Test Set)", nrow(real_validation@meta.data))
+activa_labs <- rep("ACTIVA", nrow(activa_validation@meta.data))
+scgan_labs <- rep("scGAN", nrow(scgan_validation@meta.data))
+
+## Real data
+real_validation <- AddMetaData(real_validation,
+                               metadata = real_labs,
+                               col.name = "dataset_label") # adding dataset label to metadata
+real_validation <- AddMetaData(real_validation,
+                               metadata = real_validation_celltype$celltype,
+                               col.name = "celltype") # Adding Celltype to metadata
+## scGAN data
+scgan_validation <- AddMetaData(scgan_validation,
+                                metadata = scgan_labs,
+                                col.name = "dataset_label") # adding dataset label to metadata
+scgan_validation <- AddMetaData(scgan_validation,
+                                metadata = scgan_validation_celltype$celltype,
+                                col.name = "celltype") # Adding Celltype to metadata
+## ACTIVA data
+activa_validation <- AddMetaData(activa_validation,
+                                 metadata = activa_labs,
+                                 col.name = "dataset_label") # adding dataset label to metadata
+activa_validation <- AddMetaData(activa_validation,
+                                 metadata = activa_validation_celltype$celltype,
+                                 col.name = "celltype") # Adding Celltype to metadata
+```
+
+
+# Dataset Integration -----------------------------------------------------
+#### Variable Gene Selection
+```{r}
+# 3000 highly variable genes identified using variance stabilizing transformation - vst
+real_validation <- FindVariableFeatures(object = real_validation,
+                                        nfeatures = 3000,
+                                        selection.method = "vst")
+
+scgan_validation <- FindVariableFeatures(object = scgan_validation,
+                                         nfeatures = 3000,
+                                         selection.method = "vst")
+
+activa_validation <- FindVariableFeatures(object = activa_validation,
+                                          nfeatures = 3000,
+                                          selection.method = "vst")
+```
+
+#### Integration
+```{r}
+val_list <- list(real_validation,
+                 scgan_validation, activa_validation)
+# Integration
+validation.anchors <-
+  FindIntegrationAnchors(object.list = val_list,
+                         dims = 1:30,
+                         anchor.features = 3000)
+
+validation.int <- IntegrateData(anchorset = validation.anchors,
+                                dims = 1:30)
+
+DefaultAssay(validation.int) <- "integrated"
+
+```
+
+
+# Scaling, Dimensional reduction, Clustering ------------------------------
+
+#### Scaling and PCA
+```{r}
+# Scaling
+validation.int <- ScaleData(validation.int)
+
+# Dim reduction w/PCA
+validation.int <- RunPCA(validation.int)
+ElbowPlot(validation.int, ndims = 40)
+
+```
+
+#### Jackstraw plot
+```{r, eval=FALSE}
+# Jackstraw plot
+# Takes a bit of time to run
+validation.int <- JackStraw(validation.int,
+                            dims = 50)
+validation.int <- ScoreJackStraw(validation.int, dims = 1:50)
+JackStrawPlot(validation.int, dims = 1:50)
+```
+
+#### Clustering
+```{r}
+# Clustering
+usepcs_int <- 1:50
+validation.int <- FindNeighbors(object = validation.int,
+                                dims = usepcs_int)
+
+validation.int <- FindClusters(
+  object = validation.int,
+  resolution = seq(0.20,2,0.10)
+)
+                                  
+grep("res", colnames(validation.int@meta.data), value = TRUE) %>%
+  purrr::map_chr( ~ paste(.x, "--> clusters generated:", length(unique(
+    validation.int@meta.data[, .x]
+  ))))
+
+Idents(validation.int) <- "integrated_snn_res.0.3"
+```
+
+#### Dimension reduction
+```{r}
+# Dimension reduction
+validation.int <- RunTSNE(object = validation.int, 
+                          reduction.use = "pca", 
+                          dims = usepcs_int,
+                          do.fast = TRUE)
+
+validation.int <- RunUMAP(validation.int, 
+                          reduction = "pca", 
+                          dims = usepcs_int)
+
+```
+
+#### Saving object
+```{r, eval=FALSE}
+# Saving the datasets in different formats for interoperability with python packages
+save(validation.int, file = "data/final_68kpbmc_val_int_clust.RData")
+SaveH5Seurat(validation.int,
+             filename = "final_68kpbmc_val_int_clust.h5Seurat",
+             overwrite = FALSE)
+Convert("final_68kpbmc_val_int_clust.h5Seurat", dest = "h5ad")
+```
+
+
+# Visualization with scater -----------------------------------------------
+
+#### Prep for plotting
+```{r}
+# scater is a toolkit like Seurat but uses a different data structure (Single Cell Experiment (SCE))
+
+# First will use seurat to generate the SCE data by calling the as.SingleCellExperiment() on our Seurat object
+
+# Removing negative expression values before converting to SCE object
+cleaned_CD79A <- WhichCells(validation.int,
+                            expression = CD79A >= 0)
+validation.int <- subset(validation.int, cells = cleaned_CD79A)
+cleaned_MS4A1 <- WhichCells(validation.int,
+                            expression = MS4A1 >= 0)
+validation.int <- subset(validation.int, cells = cleaned_MS4A1)
+
+# Converting the seurat object into a SCE object
+val_int_sce <- as.SingleCellExperiment(validation.int)
+names(assays(val_int_sce)) <- "counts" # making sure assay name is correct for expression values
+
+# Creating an object "logcounts" which houses log2 transformed count values
+logcounts(val_int_sce) <- log2(counts(val_int_sce) + 1)
+dim(logcounts(val_int_sce))
+```
+
+#### Plotting w/scater
+```{r, fig.cap="Clusters", fig.height=4,fig.width=8, dpi=320}
+p_clusters <-
+  plotUMAP(val_int_sce, colour_by = "ident", other_fields = "dataset_label") +
+  facet_wrap( ~ dataset_label) +
+  theme(legend.title = element_blank(),
+        strip.text.x = element_text(face = "bold"))
+p_clusters
+
+ggsave(
+  filename = "plots/integrated/pbmc68k_final_validation_scater_umap.png",
+  dpi = 320,
+  units = "in",
+  width = 8,
+  height = 4
+)
+```
+
+```{r, fig.cap="Violin Plots", fig.height=4,fig.width=8, dpi=320}
+p_CD79A <- plotExpression(
+  val_int_sce,
+  features = c("CD79A"),
+  colour_by = "ident",
+  x = "ident",
+  other_fields = "dataset_label",
+  exprs_values = "logcounts"
+) +
+  facet_wrap(~ dataset_label) +
+  xlab("Cluster") +
+  ggtitle("B-Cell Marker: CD79A") +
+  theme(legend.title = element_blank(),
+        strip.text.x = element_text(face = "bold"))
+p_CD79A
+
+ggsave(
+  filename = "plots/integrated/pbmc68k_final_validation_scater_violin_bcell_CD79A_RC.png",
+  dpi = 320,
+  units = "in",
+  width = 8,
+  height = 4
+)
+
+p_MS4A1 <- plotExpression(
+  val_int_sce,
+  features = c("MS4A1"),
+  colour_by = "ident",
+  x = "ident",
+  other_fields = "dataset_label",
+  exprs_values = "logcounts"
+) +
+  facet_wrap( ~ dataset_label) +
+  ggtitle("B-Cell Marker: MS4A1") +
+  xlab("Cluster") +
+  theme(legend.title = element_blank(),
+        strip.text.x = element_text(face = "bold"))
+p_MS4A1
+
+ggsave(
+  filename = "plots/integrated/pbmc68k_final_validation_scater_violin_bcell_MS4A1_logcounts.png",
+  dpi = 320,
+  units = "in",
+  width = 8,
+  height = 4
+)
+```
+
+
+```{r, fig.cap="Expression Plot",fig.height=4,fig.width=8, dpi=320}
+p_density_CD79A <-
+  plotUMAP(val_int_sce, colour_by = "CD79A", other_fields = "dataset_label") +
+  facet_wrap( ~ dataset_label) +
+  scale_fill_viridis_c(option = "B") +
+  ggtitle("B-Cell Marker: CD79A") +
+  theme(legend.title = element_blank(),
+        strip.text.x = element_text(face = "bold"))
+p_density_CD79A
+
+ggsave(
+  filename = "plots/integrated/pbmc68k_final_validation_scater_UMAPexpression_bcell_CD79A.png",
+  dpi = 320,
+  units = "in",
+  width = 8,
+  height = 4
+)
+
+p_density_MS4A1 <-
+  plotUMAP(val_int_sce, colour_by = "MS4A1", other_fields = "dataset_label") +
+  facet_wrap( ~ dataset_label) +
+  scale_fill_viridis_c(option = "B") +
+  ggtitle("B-Cell Marker: MS4A1") +
+  theme(legend.title = element_blank(),
+        strip.text.x = element_text(face = "bold"))
+p_density_MS4A1
+
+ggsave(
+  filename = "plots/integrated/pbmc68k_final_validation_scater_UMAPexpression_bcell_MS4A1.png",
+  dpi = 320,
+  units = "in",
+  width = 8,
+  height = 4
+)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
