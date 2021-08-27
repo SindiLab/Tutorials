@@ -37,13 +37,14 @@ Now having the path for both the key and the certificate, we can start the Jupyt
 $ jupyter lab --certfile=$CERT_PATH --keyfile=$KEY_PATH 
 ````
 
-#### Step 4: Choose a Port
+
+#### Step 4 (optional): Choose a Port
 Now we have to make sure that your desired port, usually 8888, is open and available. If you don't know what is listening on or using port 8888, you can run the following to kill anything that is currently running
 ````
 $ lsof -ti:8888 | xargs kill -9
 ````
 
-### These Steps are Done your Local Machine
+### These Steps are Done on Your Local Machine
 
 #### Step 5: Clear a Port for Binding
 Now we have to make sure that your desired port, usually 8888, is open and available on your local machine as well. If you don't know what is listening on or using port 8888, you can run the following to kill anything that is currently running
