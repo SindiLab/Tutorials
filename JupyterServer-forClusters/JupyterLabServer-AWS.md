@@ -7,10 +7,15 @@ The Jupyter framework provides a nice a framework for developing and evaluating 
 #### Step 1: Set a Password for Logging in
 
 ````bash
+$ jupyter server password
+````
+which will prompt you with fields to enter and confirm your password. You will use this password to log-in when you connect to the server. If this approach is giving you an error, you could also try:
+
+````bash
 $ jupyter notebook password
 ````
 
-which will prompt you with fields to enter and confirm your password. You will use this password to log-in when you connect to the server.
+which should not be needed, but just in case!
 
 #### Step 2: Create a SSL Certificate
 Next we will create a self-assigned Secure Sockets Layer (SSL) certificate. The directory in which the certificate is created in will be the directory that you will have access to when using Jupyter. 
