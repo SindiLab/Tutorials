@@ -1,3 +1,3 @@
 # Training and Inference Tutorial of ACTIVA
 
-To come very soon 
+Please check out the Jupyter Notebooks here for tutorials on ACTIVA.
