@@ -243,15 +243,10 @@ ggsave(
 
 ```
 
-
-
-
-
-
-
-
-
-
+#### Session Information
+```{r}
+sessionInfo()
+```
 
 
 

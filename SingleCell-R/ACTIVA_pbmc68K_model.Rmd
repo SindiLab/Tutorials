@@ -264,7 +264,7 @@ p_CD79A <- plotExpression(
 p_CD79A
 
 ggsave(
-  filename = "plots/integrated/pbmc68k_final_validation_scater_violin_bcell_CD79A_RC.png",
+  filename = "plots/integrated/pbmc68k_final_validation_scater_violin_bcell_CD79A_logcounts.png",
   dpi = 320,
   units = "in",
   width = 8,
@@ -334,15 +334,8 @@ ggsave(
 ```
 
 
-
-
-
-
-
-
-
-
-
-
-
+#### Session Info
+```{r}
+sessionInfo()
+```
 
